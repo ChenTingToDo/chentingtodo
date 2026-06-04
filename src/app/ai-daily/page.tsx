@@ -1,9 +1,16 @@
-import { readFileSync } from 'fs'
-import { join } from 'path'
-
-export const dynamic = 'force-static'
-
 export default function AiDailyPage() {
-  const html = readFileSync(join(process.cwd(), 'public', 'ai-daily.html'), 'utf-8')
-  return <div dangerouslySetInnerHTML={{ __html: html }} />
+  return (
+    <iframe
+      src="/ai-daily.html"
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: '100%',
+        border: 'none',
+      }}
+      title="AI HOT 日报"
+    />
+  )
 }
