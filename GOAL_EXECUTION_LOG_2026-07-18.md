@@ -16,10 +16,10 @@
 - [x] 建立目标和验收计划。
 - [x] 读取安全审查与 Vercel 部署约束。
 - [x] 核实依赖告警与升级方案。
-- [ ] 推送 Git 远端。
-- [ ] 部署 Vercel。
-- [ ] 完成线上自验收。
-- [ ] 记录最终结论。
+- [x] 推送 Git 远端。
+- [x] 部署 Vercel。
+- [x] 完成线上自验收。
+- [x] 记录最终结论。
 
 ## 依赖告警结论
 
@@ -33,3 +33,13 @@
 
 - 线上首次加载时，如果用户在 Pagefind 模块就绪前输入关键词，搜索不会在模块就绪后重新执行。
 - 修复方式：把 `pagefindReady` 加入搜索 effect 的依赖，确保冷启动下载完成后自动执行当前查询。
+
+## 最终验收
+
+- 正式域名：`https://www.chentingtodo.com`
+- Vercel 生产构建成功，13 个静态页面生成成功，Pagefind 索引 10 个页面。
+- 首页冷启动搜索 `LangGraph` 返回真实文章结果。
+- `/articles?tag=Docker` 正确显示 2 篇文章，筛选按钮 `aria-pressed=true`。
+- 390px 手机视口无横向溢出，浏览器控制台无错误或警告。
+- 正式响应已包含 CSP、`X-Content-Type-Options`、`X-Frame-Options`、`Referrer-Policy`、`Permissions-Policy` 和 HSTS。
+- 文章正文和文章格式未修改，UI 未重设计。
