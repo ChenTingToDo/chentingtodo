@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import Script from 'next/script'
 import './globals.css'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
@@ -27,25 +28,11 @@ export default function RootLayout({
   return (
     <html lang="zh-CN" suppressHydrationWarning>
       <head>
-        {/* Prevent flash of unstyled dark mode */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              (function() {
-                try {
-                  var theme = localStorage.getItem('theme');
-                  if (theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-                    document.documentElement.classList.add('dark');
-                  }
-                } catch(e) {}
-              })();
-            `,
-          }}
-        />
+        <Script src="/theme-init.js" strategy="beforeInteractive" />
       </head>
       <body className="font-sans antialiased bg-white dark:bg-zinc-950 text-gray-900 dark:text-gray-100">
         <Header />
-        <main className="page-enter min-h-[calc(100vh-16rem)]">
+        <main data-pagefind-body className="page-enter min-h-[calc(100vh-16rem)]">
           {children}
         </main>
         <Footer />

@@ -5,7 +5,7 @@ import TagChip from '@/components/TagChip'
 import MarkdownContent from '@/components/MarkdownContent'
 
 interface ArticlePageProps {
-  params: { slug: string }
+  params: Promise<{ slug: string }>
 }
 
 export function generateStaticParams() {
@@ -14,8 +14,9 @@ export function generateStaticParams() {
   }))
 }
 
-export function generateMetadata({ params }: ArticlePageProps) {
-  const article = getArticleBySlug(params.slug)
+export async function generateMetadata({ params }: ArticlePageProps) {
+  const { slug } = await params
+  const article = getArticleBySlug(slug)
   if (!article) return { title: '文章未找到' }
 
   return {
@@ -31,8 +32,9 @@ export function generateMetadata({ params }: ArticlePageProps) {
   }
 }
 
-export default function ArticlePage({ params }: ArticlePageProps) {
-  const article = getArticleBySlug(params.slug)
+export default async function ArticlePage({ params }: ArticlePageProps) {
+  const { slug } = await params
+  const article = getArticleBySlug(slug)
   if (!article) notFound()
 
   const { title, date, tags, category, description } = article.frontmatter
@@ -132,7 +134,7 @@ export default function ArticlePage({ params }: ArticlePageProps) {
           </Link>
 
           <a
-            href={`https://github.com/chenting/todo/edit/main/content/articles/${params.slug}.md`}
+            href={`https://github.com/ChenTingToDo/chentingtodo/edit/main/content/articles/${slug}.md`}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 

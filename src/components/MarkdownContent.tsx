@@ -18,10 +18,11 @@ export default function MarkdownContent({ content, className = '' }: MarkdownCon
   )
 }
 
-function renderMarkdown(content: string): string {
+export function renderMarkdown(content: string): string {
   const result = unified()
     .use(remarkParse)
-    .use(remarkHtml, { sanitize: false })
+    // Keep raw HTML and unsafe URL schemes out of generated article markup.
+    .use(remarkHtml, { sanitize: true })
     .processSync(content)
   
   return String(result)

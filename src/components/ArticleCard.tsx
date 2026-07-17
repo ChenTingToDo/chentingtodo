@@ -11,8 +11,7 @@ export default function ArticleCard({ article }: ArticleCardProps) {
   const isRecent = isWithinDays(date, 30)
 
   return (
-    <Link href={`/articles/${article.slug}`}>
-      <article className={`garden-card-hover p-5 ${isRecent ? 'seedling' : 'evergreen'}`}>
+    <article className={`garden-card-hover p-5 ${isRecent ? 'seedling' : 'evergreen'}`}>
         {/* Meta row */}
         <div className="flex items-center gap-3 mb-3">
           <time className="text-xs text-gray-500 dark:text-gray-500 font-mono">
@@ -32,10 +31,13 @@ export default function ArticleCard({ article }: ArticleCardProps) {
         </div>
 
         {/* Title */}
-        <h3 className="text-lg font-mono font-bold text-gray-900 dark:text-gray-100 
-                      group-hover:text-garden-600 dark:group-hover:text-garden-400 
-                      transition-colors mb-2">
-          {title}
+        <h3 className="text-lg font-mono font-bold mb-2">
+          <Link
+            href={`/articles/${article.slug}`}
+            className="text-gray-900 dark:text-gray-100 hover:text-garden-600 dark:hover:text-garden-400 transition-colors"
+          >
+            {title}
+          </Link>
         </h3>
 
         {/* Description */}
@@ -53,8 +55,7 @@ export default function ArticleCard({ article }: ArticleCardProps) {
             ))}
           </div>
         )}
-      </article>
-    </Link>
+    </article>
   )
 }
 

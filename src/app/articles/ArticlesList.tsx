@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { ArticleData } from '@/lib/content'
 import ArticleCard from '@/components/ArticleCard'
 import TagChip from '@/components/TagChip'
@@ -12,9 +13,32 @@ interface ArticlesListProps {
 }
 
 export default function ArticlesList({ articles, categories, tags }: ArticlesListProps) {
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
-  const [selectedTag, setSelectedTag] = useState<string | null>(null)
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(() => searchParams.get('category'))
+  const [selectedTag, setSelectedTag] = useState<string | null>(() => searchParams.get('tag'))
   const [visibleCount, setVisibleCount] = useState(10)
+
+  useEffect(() => {
+    setSelectedCategory(searchParams.get('category'))
+    setSelectedTag(searchParams.get('tag'))
+    setVisibleCount(10)
+  }, [searchParams])
+
+  const applyFilters = (category: string | null, tag: string | null) => {
+    const params = new URLSearchParams(searchParams.toString())
+    if (category) params.set('category', category)
+    else params.delete('category')
+    if (tag) params.set('tag', tag)
+    else params.delete('tag')
+
+    setSelectedCategory(category)
+    setSelectedTag(tag)
+    setVisibleCount(10)
+    const query = params.toString()
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false })
+  }
 
   const filtered = useMemo(() => {
     let result = articles
@@ -47,7 +71,9 @@ export default function ArticlesList({ articles, categories, tags }: ArticlesLis
         {/* Category filter */}
         <div className="flex flex-wrap gap-2">
           <button
-            onClick={() => { setSelectedCategory(null); setVisibleCount(10) }}
+            type="button"
+            aria-pressed={!selectedCategory}
+            onClick={() => applyFilters(null, selectedTag)}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
               !selectedCategory
                 ? 'bg-garden-500 text-white'
@@ -59,7 +85,9 @@ export default function ArticlesList({ articles, categories, tags }: ArticlesLis
           {categories.map(cat => (
             <button
               key={cat}
-              onClick={() => { setSelectedCategory(cat); setVisibleCount(10) }}
+              type="button"
+              aria-pressed={selectedCategory === cat}
+              onClick={() => applyFilters(cat, selectedTag)}
               className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                 selectedCategory === cat
                   ? 'bg-garden-500 text-white'
@@ -77,7 +105,9 @@ export default function ArticlesList({ articles, categories, tags }: ArticlesLis
             {tags.map(tag => (
               <button
                 key={tag}
-                onClick={() => { setSelectedTag(selectedTag === tag ? null : tag); setVisibleCount(10) }}
+                type="button"
+                aria-pressed={selectedTag === tag}
+                onClick={() => applyFilters(selectedCategory, selectedTag === tag ? null : tag)}
               >
                 <TagChip 
                   tag={tag} 
@@ -111,6 +141,7 @@ export default function ArticlesList({ articles, categories, tags }: ArticlesLis
           {hasMore && (
             <div className="mt-8 text-center">
               <button
+                type="button"
                 onClick={() => setVisibleCount(c => c + 10)}
                 className="px-6 py-2.5 rounded-xl text-sm font-medium
                          bg-gray-100 dark:bg-zinc-800 

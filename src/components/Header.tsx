@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import ThemeToggle from './ThemeToggle'
 import SearchDialog from './SearchDialog'
+import { OPEN_SEARCH_EVENT } from '@/lib/search'
 
 const navLinks = [
   { href: '/', label: 'Home' },
@@ -33,6 +34,12 @@ export default function Header() {
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
+  useEffect(() => {
+    const handleOpenSearch = () => setSearchOpen(true)
+    window.addEventListener(OPEN_SEARCH_EVENT, handleOpenSearch)
+    return () => window.removeEventListener(OPEN_SEARCH_EVENT, handleOpenSearch)
   }, [])
 
   return (

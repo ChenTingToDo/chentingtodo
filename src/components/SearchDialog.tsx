@@ -7,18 +7,39 @@ interface SearchDialogProps {
   onClose: () => void
 }
 
+interface PagefindResultData {
+  url?: string
+  meta?: Record<string, string>
+}
+
+interface PagefindSearchResult {
+  data: () => Promise<PagefindResultData>
+}
+
+interface PagefindApi {
+  search: (query: string) => Promise<{ results: PagefindSearchResult[] }>
+}
+
+declare global {
+  interface Window {
+    pagefind?: PagefindApi
+  }
+}
+
 export default function SearchDialog({ open, onClose }: SearchDialogProps) {
   const [query, setQuery] = useState('')
-  const [results, setResults] = useState<any[]>([])
+  const [results, setResults] = useState<PagefindResultData[]>([])
   const [loading, setLoading] = useState(false)
   const [pagefindReady, setPagefindReady] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
-  const pagefindRef = useRef<any>(null)
+  const pagefindRef = useRef<PagefindApi | null>(null)
+  const pagefindAttemptedRef = useRef(false)
 
   // Load Pagefind dynamically at runtime (not during build)
   useEffect(() => {
     if (!open) return
-    if (pagefindRef.current) return
+    if (pagefindRef.current || pagefindAttemptedRef.current) return
+    pagefindAttemptedRef.current = true
 
     const loadPagefind = async () => {
       try {
@@ -53,17 +74,18 @@ export default function SearchDialog({ open, onClose }: SearchDialogProps) {
 
   // Search
   useEffect(() => {
-    if (!pagefindRef.current || !query.trim()) {
+    const pagefind = pagefindRef.current
+    if (!pagefind || !query.trim()) {
       setResults([])
       return
     }
     const doSearch = async () => {
       setLoading(true)
       try {
-        const search = await pagefindRef.current.search(query)
+        const search = await pagefind.search(query)
         if (search && search.results) {
           const items = await Promise.all(
-            search.results.slice(0, 10).map((r: any) => r.data())
+            search.results.slice(0, 10).map(result => result.data())
           )
           setResults(items)
         }
@@ -81,15 +103,21 @@ export default function SearchDialog({ open, onClose }: SearchDialogProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]">
       {/* Backdrop */}
-      <div 
+      <div
         className="fixed inset-0 bg-black/50 backdrop-blur-sm"
         onClick={onClose}
+        aria-hidden="true"
       />
 
       {/* Dialog */}
-      <div className="relative w-full max-w-xl mx-4 bg-white dark:bg-zinc-900 
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="搜索文章"
+        className="relative w-full max-w-xl mx-4 bg-white dark:bg-zinc-900
                       rounded-2xl shadow-2xl border border-border-light dark:border-border-dark
-                      overflow-hidden">
+                      overflow-hidden"
+      >
         {/* Search input */}
         <div className="flex items-center gap-3 px-4 py-3 border-b border-border-light dark:border-border-dark">
           <svg className="w-5 h-5 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -99,6 +127,7 @@ export default function SearchDialog({ open, onClose }: SearchDialogProps) {
             ref={inputRef}
             type="text"
             placeholder="搜索文章..."
+            aria-label="搜索文章"
             value={query}
             onChange={e => setQuery(e.target.value)}
             className="flex-1 bg-transparent text-gray-900 dark:text-gray-100 
@@ -136,7 +165,7 @@ export default function SearchDialog({ open, onClose }: SearchDialogProps) {
 
           {results.length > 0 && (
             <div className="py-2">
-              {results.map((result: any, i: number) => (
+              {results.map((result, i) => (
                 <a
                   key={i}
                   href={result.url || '#'}
@@ -150,10 +179,6 @@ export default function SearchDialog({ open, onClose }: SearchDialogProps) {
                     <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-1">
                       {result.meta.description}
                     </div>
-                  )}
-                  {result.excerpt && (
-                    <div className="text-xs text-gray-400 dark:text-gray-500 mt-1 line-clamp-1"
-                         dangerouslySetInnerHTML={{ __html: result.excerpt }} />
                   )}
                 </a>
               ))}
@@ -176,21 +201,22 @@ export default function SearchDialog({ open, onClose }: SearchDialogProps) {
  * Dynamically load Pagefind by injecting a script tag.
  * This avoids build-time resolution issues with next/static.
  */
-async function loadPagefindScript(): Promise<any> {
+async function loadPagefindScript(): Promise<PagefindApi> {
   return new Promise((resolve, reject) => {
     // Create a script element pointing to the pagefind bundle
     const script = document.createElement('script')
-    script.src = '/pagefind/pagefind.js'
+    script.src = '/pagefind-loader.js'
+    script.type = 'module'
+    script.dataset.pagefindLoader = 'true'
     script.onload = () => {
-      // @ts-ignore - pagefind attaches to window
       if (window.pagefind) {
-        // @ts-ignore
         resolve(window.pagefind)
       } else {
         reject(new Error('Pagefind loaded but not found on window'))
       }
     }
     script.onerror = () => {
+      script.remove()
       reject(new Error('Failed to load Pagefind script'))
     }
     document.head.appendChild(script)

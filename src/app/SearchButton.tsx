@@ -1,20 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { requestSearchOpen } from '@/lib/search'
 
 export default function SearchButton() {
-  const [open, setOpen] = useState(false)
-
-  const handleOpen = () => {
-    // Dispatch custom event to open the search dialog from Header
-    const event = new CustomEvent('open-search')
-    window.dispatchEvent(event)
-    setOpen(true)
-  }
-
   return (
     <button
-      onClick={handleOpen}
+      onClick={requestSearchOpen}
       className="w-full flex items-center gap-3 px-4 py-3 
                bg-white dark:bg-zinc-900 
                border border-border-light dark:border-border-dark 

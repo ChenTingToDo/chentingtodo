@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import { getArticles, getAllCategories, getAllTags } from '@/lib/content'
 import ArticlesList from './ArticlesList'
 
@@ -7,10 +8,12 @@ export default function ArticlesPage() {
   const tags = getAllTags()
 
   return (
-    <ArticlesList 
-      articles={articles}
-      categories={categories}
-      tags={tags}
-    />
+    <Suspense fallback={null}>
+      <ArticlesList
+        articles={articles}
+        categories={categories}
+        tags={tags}
+      />
+    </Suspense>
   )
 }

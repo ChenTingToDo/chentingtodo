@@ -2,7 +2,7 @@
 title: "ChenTingToDo — 数字花园"
 date: "2025-06-08"
 tech: ["Next.js", "Tailwind CSS", "Pagefind", "Vercel"]
-github: "https://github.com/chenting/todo"
+github: "https://github.com/ChenTingToDo/chentingtodo"
 description: "个人数字成长档案馆。记录 AI 学习、项目开发与技术成长过程。"
 published: true
 ---

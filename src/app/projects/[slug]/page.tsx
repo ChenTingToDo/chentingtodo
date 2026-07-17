@@ -4,7 +4,7 @@ import { getProjectBySlug, getProjects } from '@/lib/content'
 import MarkdownContent from '@/components/MarkdownContent'
 
 interface ProjectPageProps {
-  params: { slug: string }
+  params: Promise<{ slug: string }>
 }
 
 export function generateStaticParams() {
@@ -13,8 +13,9 @@ export function generateStaticParams() {
   }))
 }
 
-export function generateMetadata({ params }: ProjectPageProps) {
-  const project = getProjectBySlug(params.slug)
+export async function generateMetadata({ params }: ProjectPageProps) {
+  const { slug } = await params
+  const project = getProjectBySlug(slug)
   if (!project) return { title: '项目未找到' }
 
   return {
@@ -23,8 +24,9 @@ export function generateMetadata({ params }: ProjectPageProps) {
   }
 }
 
-export default function ProjectPage({ params }: ProjectPageProps) {
-  const project = getProjectBySlug(params.slug)
+export default async function ProjectPage({ params }: ProjectPageProps) {
+  const { slug } = await params
+  const project = getProjectBySlug(slug)
   if (!project) notFound()
 
   const { title, date, description, tech, github } = project.frontmatter
