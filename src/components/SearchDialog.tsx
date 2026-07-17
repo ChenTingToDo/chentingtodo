@@ -96,7 +96,7 @@ export default function SearchDialog({ open, onClose }: SearchDialogProps) {
     }
     const timer = setTimeout(doSearch, 300)
     return () => clearTimeout(timer)
-  }, [query])
+  }, [query, pagefindReady])
 
   if (!open) return null
 
