@@ -58,3 +58,14 @@
 - 首次 CI 暴露出 `actions/checkout@v4` 与 `actions/setup-node@v4` 的 Node.js 20 Action 运行时弃用告警；已根据两个项目的当前正式版本升级到 `v7`。
 - Actions v7 最终 CI 已通过：`https://github.com/ChenTingToDo/chentingtodo/actions/runs/29656996353`。
 - Actions v7 最终依赖监控已通过：`https://github.com/ChenTingToDo/chentingtodo/actions/runs/29657002194`；当前 PostCSS 8.4.31 仅产生已记录的风险接受 warning。
+
+## Next.js 16 独立评估
+
+- 评估基线：已推送提交 `f435b5a`，在独立临时 worktree 中将 `next` 与 `eslint-config-next` 升级到 16.2.10，没有改动主工作区和文章管线文件。
+- 运行时条件：Next.js 16.2.10 要求 Node.js `>=20.9.0`，本机与 CI 的 Node.js 22 均满足；React 18.3 仍满足 peer dependency。
+- 真实结果：TypeScript、Markdown 安全测试、Turbopack 生产构建、静态导出与 Pagefind 均通过；动态路由 `params` 已使用异步 API，不是阻塞项。
+- 已确认的迁移项：ESLint 配置需从 `FlatCompat` 改为 Next.js 16 原生 Flat Config；新规则随后准确发现 3 处 `react-hooks/set-state-in-effect`（文章筛选、移动菜单、主题开关），需重构或明确豁免后 `npm run check` 才能全绿。
+- Next.js 16 构建还会把 TypeScript 的 `jsx` 调整为 `react-jsx`，并补充 `.next/dev/types/**/*.ts` include，应作为迁移 diff 一并审查。
+- 安全结论：Next.js 16.2.10 当前仍内置 PostCSS 8.4.31，因此升级 Next.js 16 **不能消除这 2 个 moderate 告警**。
+- 决策：本轮不升级生产依赖。待文章管线改动完成并提交后，再用独立小提交迁移 ESLint、处理 3 条新规则、升级 Next.js，并以完整 CI 与页面冒烟测试验收；当前继续使用定时监控是更小且可验证的方案。
+- 官方迁移指南：`https://nextjs.org/docs/app/guides/upgrading/version-16`。
