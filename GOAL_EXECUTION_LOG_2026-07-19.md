@@ -25,7 +25,7 @@
 - [x] 新增 CI、Dependabot 和 PostCSS 定时监控。
 - [x] 完善 README 与旧审查报告状态。
 - [x] 升级并验证本机 Node.js 22。
-- [ ] 完整检查、提交、推送并确认 Actions。
+- [x] 完整检查、提交、推送并确认 Actions。
 
 ## 每轮记录约定
 
@@ -50,3 +50,9 @@
 - `npm run check`：lint、TypeScript、Markdown 安全测试、Next.js 生产构建和 Pagefind 索引全部通过。
 - YAML 解析：两个 workflow 与 Dependabot 配置均通过语法解析。
 - 文章正文和文章格式：未修改。
+
+## 线上验收与自迭代
+
+- 首次 Node.js 22 CI 已通过：`https://github.com/ChenTingToDo/chentingtodo/actions/runs/29656942233`。
+- 手动触发的依赖监控已通过：`https://github.com/ChenTingToDo/chentingtodo/actions/runs/29656945758`。
+- 首次 CI 暴露出 `actions/checkout@v4` 与 `actions/setup-node@v4` 的 Node.js 20 Action 运行时弃用告警；已根据两个项目的当前正式版本升级到 `v7`，并安排最终 CI 复验。
