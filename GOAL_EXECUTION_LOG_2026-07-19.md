@@ -55,4 +55,6 @@
 
 - 首次 Node.js 22 CI 已通过：`https://github.com/ChenTingToDo/chentingtodo/actions/runs/29656942233`。
 - 手动触发的依赖监控已通过：`https://github.com/ChenTingToDo/chentingtodo/actions/runs/29656945758`。
-- 首次 CI 暴露出 `actions/checkout@v4` 与 `actions/setup-node@v4` 的 Node.js 20 Action 运行时弃用告警；已根据两个项目的当前正式版本升级到 `v7`，并安排最终 CI 复验。
+- 首次 CI 暴露出 `actions/checkout@v4` 与 `actions/setup-node@v4` 的 Node.js 20 Action 运行时弃用告警；已根据两个项目的当前正式版本升级到 `v7`。
+- Actions v7 最终 CI 已通过：`https://github.com/ChenTingToDo/chentingtodo/actions/runs/29656996353`。
+- Actions v7 最终依赖监控已通过：`https://github.com/ChenTingToDo/chentingtodo/actions/runs/29657002194`；当前 PostCSS 8.4.31 仅产生已记录的风险接受 warning。
