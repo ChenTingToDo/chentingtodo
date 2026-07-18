@@ -1,0 +1,32 @@
+name: Dependency monitor
+
+on:
+  schedule:
+    - cron: '0 2 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 配置 Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 安装锁定依赖
+        run: npm ci
+
+      - name: 阻止新增高危或严重依赖漏洞
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: 检查 Next.js 内置 PostCSS 修复状态
+        run: npm run monitor:postcss
