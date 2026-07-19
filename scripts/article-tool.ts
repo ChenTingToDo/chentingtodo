@@ -480,7 +480,7 @@ async function waitForProductionDeployment(commit: string): Promise<boolean> {
   while (Date.now() < deadline) {
     try {
       const deploymentsResponse = await fetch(
-        `https://api.github.com/repos/ChenTingToDo/chentingtodo/deployments?sha=${commit}&environment=Production&per_page=1`,
+        `https://api.github.com/repos/ChenTingToDo/chentingtodo-site/deployments?sha=${commit}&environment=Production&per_page=1`,
         { headers, signal: AbortSignal.timeout(8_000) },
       )
       if (deploymentsResponse.ok) {

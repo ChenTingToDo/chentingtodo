@@ -143,7 +143,7 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
           </Link>
 
           <a
-            href={`https://github.com/ChenTingToDo/chentingtodo/edit/main/content/articles/${slug}.md`}
+            href={`https://github.com/ChenTingToDo/chentingtodo-site/edit/main/content/articles/${slug}.md`}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 
