@@ -17,7 +17,7 @@ export default function Footer() {
           {/* Right */}
           <div className="flex items-center gap-4 text-xs text-gray-400 dark:text-gray-500">
             <a 
-              href="https://github.com/ChenTingToDo/chentingtodo"
+              href="https://github.com/ChenTingToDo/chentingtodo-site"
               target="_blank" 
               rel="noopener noreferrer"
               className="hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
