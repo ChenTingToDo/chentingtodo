@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import matter from 'gray-matter'
+import { formatArticleIssues, isSafeArticleSlug, validateArticleDocument } from './article-schema'
 
 const contentDirectory = path.join(process.cwd(), 'content')
 
@@ -9,7 +10,7 @@ export interface ArticleFrontmatter {
   date: string
   tags: string[]
   category: string
-  description?: string
+  description: string
   published: boolean
 }
 
@@ -45,11 +46,32 @@ export function getArticleSlugs(): string[] {
 }
 
 export function getArticleBySlug(slug: string): ArticleData | null {
-  const fullPath = path.join(contentDirectory, 'articles', `${slug}.md`)
+  if (!isSafeArticleSlug(slug)) return null
+
+  const articlePath = path.join(contentDirectory, 'articles', `${slug}.md`)
+  const draftPreviewPath = process.env.NODE_ENV !== 'production'
+    && process.env.ARTICLE_PREVIEW_SLUG === slug
+    ? path.join(contentDirectory, 'drafts', `${slug}.md`)
+    : null
+  const fullPath = fs.existsSync(articlePath)
+    ? articlePath
+    : draftPreviewPath && fs.existsSync(draftPreviewPath)
+      ? draftPreviewPath
+      : articlePath
   if (!fs.existsSync(fullPath)) return null
 
   const fileContents = fs.readFileSync(fullPath, 'utf8')
   const { data, content } = matter(fileContents)
+  const issues = validateArticleDocument({
+    slug,
+    data,
+    content,
+    forPublish: data.published === true,
+    sourcePath: fullPath,
+  }).filter(issue => issue.level === 'error')
+  if (issues.length > 0) {
+    throw new Error(formatArticleIssues(fullPath, issues).join('\n'))
+  }
 
   return {
     slug,
@@ -63,7 +85,7 @@ export function getArticles(): ArticleData[] {
   const articles = slugs
     .map(slug => getArticleBySlug(slug))
     .filter((article): article is ArticleData => 
-      article !== null && article.frontmatter.published !== false
+      article !== null && article.frontmatter.published === true
     )
     .sort((a, b) => new Date(b.frontmatter.date).getTime() - new Date(a.frontmatter.date).getTime())
 

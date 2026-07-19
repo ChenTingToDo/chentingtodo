@@ -10,9 +10,15 @@
     "start": "next start",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/markdown-security.test.ts",
+    "test": "tsx --test tests/markdown-security.test.ts tests/article-pipeline.test.ts",
+    "check:content": "tsx scripts/article-tool.ts check --published",
+    "article:prepare": "tsx scripts/article-tool.ts prepare",
+    "article:check": "tsx scripts/article-tool.ts check",
+    "article:preview": "tsx scripts/article-preview.ts",
+    "article:publish": "tsx scripts/article-tool.ts publish",
+    "article:online": "tsx scripts/article-tool.ts online",
     "monitor:postcss": "node scripts/check-next-postcss.mjs",
-    "check": "npm run lint && npm run typecheck && npm test && npm run build"
+    "check": "npm run lint && npm run typecheck && npm test && npm run check:content && npm run build"
   },
   "dependencies": {
     "gray-matter": "^4.0.3",

@@ -9,9 +9,18 @@ interface ArticlePageProps {
 }
 
 export function generateStaticParams() {
-  return getArticles().map(article => ({
+  const params = getArticles().map(article => ({
     slug: article.slug,
   }))
+  const previewSlug = process.env.NODE_ENV !== 'production'
+    ? process.env.ARTICLE_PREVIEW_SLUG
+    : undefined
+
+  if (previewSlug && !params.some(param => param.slug === previewSlug) && getArticleBySlug(previewSlug)) {
+    params.push({ slug: previewSlug })
+  }
+
+  return params
 }
 
 export async function generateMetadata({ params }: ArticlePageProps) {
