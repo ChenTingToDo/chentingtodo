@@ -189,6 +189,7 @@ export function checkArticleBySlug(
     forPublish: options.forPublish ?? located.kind === 'draft',
     sourcePath,
   })
+  issues.push(...validateArticleAssets(rootDir, slug, parsed.content, located.kind))
   issues.push(...findDuplicateTitle(rootDir, slug, parsed.data.title))
   return issues
 }
@@ -240,6 +241,7 @@ export function checkPublishedArticles(rootDir = process.cwd()): Map<string, Art
       forPublish: parsed.data.published === true,
       sourcePath: path.join(articlesDir, fileName),
     })
+    issues.push(...validateArticleAssets(absoluteRoot, slug, parsed.content, 'article'))
     issues.push(...findDuplicateTitle(absoluteRoot, slug, parsed.data.title, ['articles']))
     results.set(slug, issues)
   }
@@ -251,8 +253,11 @@ export function publishArticle(slug: string, options: PublishOptions = {}): stri
   assertSlug(slug)
   const draftPath = path.join(rootDir, 'content', 'drafts', `${slug}.md`)
   const articlePath = path.join(rootDir, 'content', 'articles', `${slug}.md`)
+  const draftAssetsPath = getDraftAssetsPath(rootDir, slug)
+  const articleAssetsPath = getArticleAssetsPath(rootDir, slug)
   if (!fs.existsSync(draftPath)) throw new Error(`找不到草稿：${draftPath}`)
   if (fs.existsSync(articlePath)) throw new Error(`正式文章已存在：${articlePath}`)
+  if (fs.existsSync(articleAssetsPath)) throw new Error(`正式图片目录已存在，未覆盖任何图片：${articleAssetsPath}`)
 
   const originalDraft = fs.readFileSync(draftPath, 'utf8')
   const parsed = matter(originalDraft)
@@ -264,32 +269,37 @@ export function publishArticle(slug: string, options: PublishOptions = {}): stri
     forPublish: true,
     sourcePath: articlePath,
   })
+  issues.push(...validateArticleAssets(rootDir, slug, parsed.content, 'draft'))
   issues.push(...findDuplicateTitle(rootDir, slug, parsed.data.title))
   const errors = issues.filter(issue => issue.level === 'error')
   if (errors.length > 0) {
     throw new Error(['文章尚未达到发布条件：', ...formatArticleIssues(draftPath, errors)].join(os.EOL))
   }
 
-  fs.mkdirSync(path.dirname(articlePath), { recursive: true })
-  fs.writeFileSync(articlePath, matter.stringify(parsed.content.trimStart(), publishedData), 'utf8')
-  fs.rmSync(draftPath)
-
   const runChecks = options.runChecks ?? runProjectChecks
-  let checksPassed = false
+  let copiedAssets = false
   try {
-    checksPassed = runChecks(rootDir)
+    if (fs.existsSync(draftAssetsPath)) {
+      fs.mkdirSync(path.dirname(articleAssetsPath), { recursive: true })
+      fs.cpSync(draftAssetsPath, articleAssetsPath, { recursive: true, errorOnExist: true, force: false })
+      copiedAssets = true
+    }
+    fs.mkdirSync(path.dirname(articlePath), { recursive: true })
+    fs.writeFileSync(articlePath, matter.stringify(parsed.content.trimStart(), publishedData), 'utf8')
+    fs.rmSync(draftPath)
+    if (!runChecks(rootDir)) throw new Error('网站完整检查失败。')
+    if (fs.existsSync(draftAssetsPath)) fs.rmSync(draftAssetsPath, { recursive: true })
+    return articlePath
   } catch {
-    checksPassed = false
-  }
-  if (!checksPassed) {
     if (fs.existsSync(articlePath)) fs.rmSync(articlePath)
+    if (copiedAssets && fs.existsSync(articleAssetsPath)) {
+      fs.rmSync(articleAssetsPath, { recursive: true, force: true })
+    }
     fs.rmSync(path.join(rootDir, 'out'), { recursive: true, force: true })
     fs.mkdirSync(path.dirname(draftPath), { recursive: true })
     fs.writeFileSync(draftPath, originalDraft, 'utf8')
-    throw new Error('发布前完整检查失败，已恢复原草稿，没有留下半发布文章。')
+    throw new Error('发布前完整检查失败，已恢复原草稿和草稿图片，没有留下半发布内容。')
   }
-
-  return articlePath
 }
 
 export async function publishArticleOnline(
@@ -314,17 +324,20 @@ export async function publishArticleOnline(
     throw new Error(`找不到草稿或正式文章：${slug}`)
   }
 
-  ensureGitCanPublishArticle(rootDir, articlePath)
-  const relativeArticlePath = toGitPath(path.relative(rootDir, articlePath))
-  runGit(rootDir, ['add', '--', relativeArticlePath])
-  if (runGit(rootDir, ['status', '--porcelain', '--', relativeArticlePath]).trim()) {
+  const articleAssetsPath = getArticleAssetsPath(rootDir, slug)
+  const publishPaths = [articlePath]
+  if (fs.existsSync(articleAssetsPath)) publishPaths.push(articleAssetsPath)
+  ensureGitCanPublishArticle(rootDir, publishPaths)
+  const relativePublishPaths = publishPaths.map(filePath => toGitPath(path.relative(rootDir, filePath)))
+  runGit(rootDir, ['add', '--', ...relativePublishPaths])
+  if (runGit(rootDir, ['status', '--porcelain', '--', ...relativePublishPaths]).trim()) {
     runGit(rootDir, [
       'commit',
       '--only',
       '-m',
       `content: publish ${slug}`,
       '--',
-      relativeArticlePath,
+      ...relativePublishPaths,
     ])
   }
   const commit = runGit(rootDir, ['rev-parse', 'HEAD']).trim()
@@ -339,7 +352,7 @@ export async function publishArticleOnline(
   }
 }
 
-function ensureGitCanPublishArticle(rootDir: string, articlePath: string): void {
+function ensureGitCanPublishArticle(rootDir: string, publishPaths: string[]): void {
   runGit(rootDir, ['rev-parse', '--is-inside-work-tree'])
   runGit(rootDir, ['fetch', 'origin', 'main'])
   const counts = runGit(rootDir, ['rev-list', '--left-right', '--count', 'origin/main...HEAD'])
@@ -349,13 +362,96 @@ function ensureGitCanPublishArticle(rootDir: string, articlePath: string): void 
     throw new Error('线上代码比本机更新。为避免覆盖他人修改，请先让 Codex 同步项目后再上线。')
   }
   if (ahead > 0) {
-    const allowedPath = toGitPath(path.relative(rootDir, articlePath))
+    const allowedPaths = publishPaths.map(filePath => toGitPath(path.relative(rootDir, filePath)))
     const aheadPaths = runGit(rootDir, ['diff', '--name-only', 'origin/main..HEAD'])
       .split(/\r?\n/).map(value => value.trim()).filter(Boolean)
-    if (aheadPaths.some(changedPath => changedPath !== allowedPath)) {
+    if (aheadPaths.some(changedPath => !allowedPaths.some(allowedPath => (
+      changedPath === allowedPath || changedPath.startsWith(`${allowedPath}/`)
+    )))) {
       throw new Error('本机还有其他尚未上线的代码提交。请先让 Codex 检查并同步，再发布文章。')
     }
   }
+}
+
+function getDraftAssetsPath(rootDir: string, slug: string): string {
+  return path.join(rootDir, 'content', 'draft-assets', slug)
+}
+
+function getArticleAssetsPath(rootDir: string, slug: string): string {
+  return path.join(rootDir, 'public', 'images', 'articles', slug)
+}
+
+function validateArticleAssets(
+  rootDir: string,
+  slug: string,
+  content: string,
+  kind: 'draft' | 'article',
+): ArticleValidationIssue[] {
+  const issues: ArticleValidationIssue[] = []
+  const assetRoot = kind === 'draft' ? getDraftAssetsPath(rootDir, slug) : getArticleAssetsPath(rootDir, slug)
+  const expectedPrefix = `/images/articles/${slug}/`
+  let fence: '`' | '~' | null = null
+
+  content.split(/\r?\n/).forEach((line, index) => {
+    const fenceMatch = line.match(/^\s*(`{3,}|~{3,})/)
+    if (fenceMatch) {
+      const marker = fenceMatch[1][0] as '`' | '~'
+      if (fence === null) fence = marker
+      else if (fence === marker) fence = null
+      return
+    }
+    if (fence !== null) return
+
+    for (const match of line.matchAll(/!\[([^\]]*)\]\(([^\s)]+)(?:\s+[^)]*)?\)/g)) {
+      const alt = match[1].trim()
+      const target = match[2].split(/[?#]/)[0]
+      if (target.startsWith('/images/articles/') && !target.startsWith(expectedPrefix)) {
+        issues.push({
+          level: 'error',
+          line: index + 1,
+          message: `图片不属于当前文章目录：${target}`,
+          suggestion: `使用发布工具重新插图，图片应位于 ${expectedPrefix}`,
+        })
+        continue
+      }
+      if (!target.startsWith(expectedPrefix)) continue
+      const fileName = target.slice(expectedPrefix.length)
+      if (!/^[a-z0-9][a-z0-9-]*\.(?:png|jpe?g)$/i.test(fileName)) {
+        issues.push({
+          level: 'error',
+          line: index + 1,
+          message: `图片文件名不安全：${fileName}`,
+          suggestion: '使用发布工具重新插图，让工具自动重命名。',
+        })
+        continue
+      }
+      if (!alt) {
+        issues.push({
+          level: 'error',
+          line: index + 1,
+          message: `图片缺少说明文字：${fileName}`,
+          suggestion: '在图片方括号内填写访客能理解的简短说明。',
+        })
+      }
+      const filePath = path.join(assetRoot, fileName)
+      if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+        issues.push({
+          level: 'error',
+          line: index + 1,
+          message: `找不到文章图片：${target}`,
+          suggestion: '在发布工具中重新选择这张图片。',
+        })
+      } else if (fs.statSync(filePath).size > 1_500_000) {
+        issues.push({
+          level: 'error',
+          line: index + 1,
+          message: `图片超过 1.5 MB：${fileName}`,
+          suggestion: '使用发布工具重新插图并自动压缩。',
+        })
+      }
+    }
+  })
+  return issues
 }
 
 function runGit(rootDir: string, args: string[]): string {

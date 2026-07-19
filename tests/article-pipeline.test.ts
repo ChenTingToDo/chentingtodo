@@ -199,6 +199,56 @@ test('发布前检查失败时原样恢复草稿，不留下半发布文章', ()
   }
 })
 
+test('草稿图片缺失、目录错误或说明为空时阻止发布', () => {
+  const root = temporaryRoot()
+  try {
+    const prepared = prepareArticle(validSource(root), { rootDir: root, slug: 'image-check' })
+    const original = fs.readFileSync(prepared.draftPath, 'utf8')
+    fs.writeFileSync(prepared.draftPath, original + [
+      '',
+      '![](/images/articles/image-check/missing.png)',
+      '![其他文章图片](/images/articles/other-article/image.png)',
+    ].join('\n'), 'utf8')
+    const messages = checkArticleBySlug('image-check', { rootDir: root }).map(issue => issue.message).join('\n')
+    assert.match(messages, /图片缺少说明文字/)
+    assert.match(messages, /找不到文章图片/)
+    assert.match(messages, /图片不属于当前文章目录/)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('发布会移动文章图片，检查失败时同时恢复草稿图片', () => {
+  const root = temporaryRoot()
+  try {
+    const prepared = prepareArticle(validSource(root), { rootDir: root, slug: 'image-rollback' })
+    const draftAssets = path.join(root, 'content', 'draft-assets', 'image-rollback')
+    fs.mkdirSync(draftAssets, { recursive: true })
+    fs.writeFileSync(path.join(draftAssets, '01-result.png'), 'small image fixture', 'utf8')
+    fs.appendFileSync(
+      prepared.draftPath,
+      '\n![部署结果](/images/articles/image-rollback/01-result.png)\n',
+      'utf8',
+    )
+
+    assert.deepEqual(checkArticleBySlug('image-rollback', { rootDir: root }), [])
+    assert.throws(
+      () => publishArticle('image-rollback', { rootDir: root, runChecks: () => false }),
+      /已恢复原草稿和草稿图片/,
+    )
+    assert.equal(fs.existsSync(path.join(draftAssets, '01-result.png')), true)
+    assert.equal(fs.existsSync(path.join(root, 'public', 'images', 'articles', 'image-rollback')), false)
+
+    const articlePath = publishArticle('image-rollback', { rootDir: root, runChecks: () => true })
+    assert.equal(fs.existsSync(prepared.draftPath), false)
+    assert.equal(fs.existsSync(draftAssets), false)
+    assert.equal(fs.existsSync(path.join(root, 'public', 'images', 'articles', 'image-rollback', '01-result.png')), true)
+    assert.match(fs.readFileSync(articlePath, 'utf8'), /01-result\.png/)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('合规草稿通过校验后移动到正式目录并明确 published true', () => {
   const root = temporaryRoot()
   try {

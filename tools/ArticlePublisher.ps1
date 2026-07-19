@@ -11,6 +11,7 @@
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
+Add-Type -AssemblyName Microsoft.VisualBasic
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $NodeCommand = (Get-Command node.exe -ErrorAction Stop).Source
@@ -18,7 +19,9 @@ $TsxCli = Join-Path $ProjectRoot 'node_modules\tsx\dist\cli.mjs'
 $ArticleTool = Join-Path $ProjectRoot 'scripts\article-tool.ts'
 $ArticlePreview = Join-Path $ProjectRoot 'scripts\article-preview.ts'
 $DraftsDirectory = Join-Path $ProjectRoot 'content\drafts'
+$DraftAssetsDirectory = Join-Path $ProjectRoot 'content\draft-assets'
 $ArticlesDirectory = Join-Path $ProjectRoot 'content\articles'
+$PublicArticleImagesDirectory = Join-Path $ProjectRoot 'public\images\articles'
 
 if (-not (Test-Path -LiteralPath $TsxCli) -or -not (Test-Path -LiteralPath $ArticleTool)) {
     [System.Windows.Forms.MessageBox]::Show(
@@ -33,6 +36,7 @@ if (-not (Test-Path -LiteralPath $TsxCli) -or -not (Test-Path -LiteralPath $Arti
 $script:CurrentSlug = $null
 $script:CurrentFile = $null
 $script:PreviewProcess = $null
+$script:PreviewAssetsDirectory = $null
 
 function ConvertTo-CommandLineArgument {
     param([Parameter(Mandatory)][string]$Value)
@@ -90,6 +94,7 @@ function Stop-ArticlePreview {
         & taskkill.exe /PID $script:PreviewProcess.Id /T /F 2>$null | Out-Null
     }
     $script:PreviewProcess = $null
+    Remove-PreviewAssets
 }
 
 function Get-FreeTcpPort {
@@ -111,6 +116,226 @@ function Test-TcpPort {
     } finally {
         $client.Dispose()
     }
+}
+
+function Remove-PreviewAssets {
+    if (-not $script:PreviewAssetsDirectory) { return }
+    $target = [System.IO.Path]::GetFullPath($script:PreviewAssetsDirectory)
+    $publicRoot = [System.IO.Path]::GetFullPath($PublicArticleImagesDirectory) + [System.IO.Path]::DirectorySeparatorChar
+    if ($target.StartsWith($publicRoot, [System.StringComparison]::OrdinalIgnoreCase) -and (Test-Path -LiteralPath $target)) {
+        Remove-Item -LiteralPath $target -Recurse -Force
+    }
+    $script:PreviewAssetsDirectory = $null
+}
+
+function Stage-DraftAssetsForPreview {
+    param([Parameter(Mandatory)][string]$Slug)
+    $source = Join-Path $DraftAssetsDirectory $Slug
+    if (-not (Test-Path -LiteralPath $source -PathType Container)) { return }
+    $target = Join-Path $PublicArticleImagesDirectory $Slug
+    if (Test-Path -LiteralPath $target) {
+        throw "图片预览目录已经存在，未覆盖任何文件：$target"
+    }
+    [void](New-Item -ItemType Directory -Path $PublicArticleImagesDirectory -Force)
+    Copy-Item -LiteralPath $source -Destination $target -Recurse
+    $script:PreviewAssetsDirectory = $target
+}
+
+function Write-Utf8Text {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Text
+    )
+    $encoding = [System.Text.UTF8Encoding]::new($false)
+    [System.IO.File]::WriteAllText($Path, $Text, $encoding)
+}
+
+function Add-CompressedArticleImage {
+    param(
+        [Parameter(Mandatory)][string]$SourcePath,
+        [Parameter(Mandatory)][string]$Slug
+    )
+    $extension = [System.IO.Path]::GetExtension($SourcePath).ToLowerInvariant()
+    if ($extension -notin @('.png', '.jpg', '.jpeg')) {
+        throw '第一版支持 PNG、JPG 和 JPEG 图片。请先把其他格式另存为 PNG 或 JPG。'
+    }
+
+    $assetDirectory = Join-Path $DraftAssetsDirectory $Slug
+    [void](New-Item -ItemType Directory -Path $assetDirectory -Force)
+    $baseName = [System.IO.Path]::GetFileNameWithoutExtension($SourcePath).ToLowerInvariant()
+    $baseName = [regex]::Replace($baseName, '[^a-z0-9]+', '-').Trim('-')
+    if (-not $baseName) { $baseName = 'image' }
+    if ($baseName.Length -gt 48) { $baseName = $baseName.Substring(0, 48).Trim('-') }
+    $outputExtension = if ($extension -eq '.png') { '.png' } else { '.jpg' }
+    $index = 1
+    do {
+        $fileName = ('{0:d2}-{1}{2}' -f $index, $baseName, $outputExtension)
+        $destination = Join-Path $assetDirectory $fileName
+        $index += 1
+    } while (Test-Path -LiteralPath $destination)
+
+    $sourceImage = $null
+    $bitmap = $null
+    $graphics = $null
+    $encoderParameters = $null
+    try {
+        $sourceImage = [System.Drawing.Image]::FromFile($SourcePath)
+        $scale = [Math]::Min(1.0, 1600.0 / [Math]::Max($sourceImage.Width, $sourceImage.Height))
+        $width = [Math]::Max(1, [int][Math]::Round($sourceImage.Width * $scale))
+        $height = [Math]::Max(1, [int][Math]::Round($sourceImage.Height * $scale))
+        $bitmap = [System.Drawing.Bitmap]::new($width, $height, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+        $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+        $graphics.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality
+        $graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+        $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
+        if ($outputExtension -eq '.jpg') { $graphics.Clear([System.Drawing.Color]::White) }
+        else { $graphics.Clear([System.Drawing.Color]::Transparent) }
+        $graphics.DrawImage($sourceImage, 0, 0, $width, $height)
+        $graphics.Dispose()
+        $graphics = $null
+
+        if ($outputExtension -eq '.png') {
+            $bitmap.Save($destination, [System.Drawing.Imaging.ImageFormat]::Png)
+        } else {
+            $jpegEncoder = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() |
+                Where-Object { $_.MimeType -eq 'image/jpeg' } |
+                Select-Object -First 1
+            $encoderParameters = [System.Drawing.Imaging.EncoderParameters]::new(1)
+            $encoderParameters.Param[0] = [System.Drawing.Imaging.EncoderParameter]::new(
+                [System.Drawing.Imaging.Encoder]::Quality,
+                [long]85
+            )
+            $bitmap.Save($destination, $jpegEncoder, $encoderParameters)
+        }
+    } catch {
+        if (Test-Path -LiteralPath $destination) { Remove-Item -LiteralPath $destination -Force }
+        throw
+    } finally {
+        if ($encoderParameters) { $encoderParameters.Dispose() }
+        if ($graphics) { $graphics.Dispose() }
+        if ($bitmap) { $bitmap.Dispose() }
+        if ($sourceImage) { $sourceImage.Dispose() }
+    }
+
+    [pscustomobject]@{
+        FilePath = $destination
+        MarkdownUrl = "/images/articles/$Slug/$fileName"
+    }
+}
+
+function Show-ArticleEditor {
+    if (-not $script:CurrentSlug -or -not $script:CurrentFile -or -not (Test-Path -LiteralPath $script:CurrentFile -PathType Leaf)) {
+        [void][System.Windows.Forms.MessageBox]::Show('请先导入或打开一篇草稿。', '文章编辑器', 'OK', 'Information')
+        return
+    }
+    $expectedDraft = [System.IO.Path]::GetFullPath((Join-Path $DraftsDirectory "$($script:CurrentSlug).md"))
+    if ([System.IO.Path]::GetFullPath($script:CurrentFile) -ne $expectedDraft) {
+        Start-Process -FilePath $script:CurrentFile
+        return
+    }
+
+    $editorForm = [System.Windows.Forms.Form]::new()
+    $editorForm.Text = "编辑正文并插图 — $($script:CurrentSlug)"
+    $editorForm.StartPosition = 'CenterParent'
+    $editorForm.Size = [System.Drawing.Size]::new(1000, 760)
+    $editorForm.MinimumSize = [System.Drawing.Size]::new(800, 600)
+    $editorForm.Font = [System.Drawing.Font]::new('Microsoft YaHei UI', 9)
+
+    $hint = [System.Windows.Forms.Label]::new()
+    $hint.Location = [System.Drawing.Point]::new(15, 12)
+    $hint.Size = [System.Drawing.Size]::new(950, 36)
+    $hint.Text = '把光标放在希望出现图片的位置，再点击“在光标处插入图片”。图片会自动缩小、清除元数据并保存到当前草稿。'
+    $editorForm.Controls.Add($hint)
+
+    $editor = [System.Windows.Forms.RichTextBox]::new()
+    $editor.Location = [System.Drawing.Point]::new(15, 52)
+    $editor.Size = [System.Drawing.Size]::new(950, 610)
+    $editor.Anchor = 'Top,Bottom,Left,Right'
+    $editor.Font = [System.Drawing.Font]::new('Consolas', 10)
+    $editor.AcceptsTab = $true
+    $editor.WordWrap = $false
+    $editor.Text = [System.IO.File]::ReadAllText($script:CurrentFile, [System.Text.Encoding]::UTF8)
+    $editor.Tag = $editor.Text
+    $editorForm.Controls.Add($editor)
+
+    $insertButton = [System.Windows.Forms.Button]::new()
+    $insertButton.Location = [System.Drawing.Point]::new(15, 675)
+    $insertButton.Size = [System.Drawing.Size]::new(190, 34)
+    $insertButton.Anchor = 'Bottom,Left'
+    $insertButton.Text = '在光标处插入图片…'
+    $editorForm.Controls.Add($insertButton)
+
+    $saveButton = [System.Windows.Forms.Button]::new()
+    $saveButton.Location = [System.Drawing.Point]::new(220, 675)
+    $saveButton.Size = [System.Drawing.Size]::new(130, 34)
+    $saveButton.Anchor = 'Bottom,Left'
+    $saveButton.Text = '保存草稿'
+    $editorForm.Controls.Add($saveButton)
+
+    $editorStatus = [System.Windows.Forms.Label]::new()
+    $editorStatus.Location = [System.Drawing.Point]::new(370, 682)
+    $editorStatus.Size = [System.Drawing.Size]::new(430, 25)
+    $editorStatus.Anchor = 'Bottom,Left,Right'
+    $editorStatus.ForeColor = [System.Drawing.Color]::DimGray
+    $editorStatus.Text = '点击正文确定位置后即可插图。'
+    $editorForm.Controls.Add($editorStatus)
+
+    $closeButton = [System.Windows.Forms.Button]::new()
+    $closeButton.Location = [System.Drawing.Point]::new(835, 675)
+    $closeButton.Size = [System.Drawing.Size]::new(130, 34)
+    $closeButton.Anchor = 'Bottom,Right'
+    $closeButton.Text = '关闭'
+    $editorForm.Controls.Add($closeButton)
+
+    $saveButton.Add_Click({
+        Write-Utf8Text $script:CurrentFile $editor.Text
+        $editor.Tag = $editor.Text
+        $editorStatus.Text = "已保存：$(Get-Date -Format 'HH:mm:ss')"
+        Write-AppLog "已保存草稿：$($script:CurrentFile)"
+    })
+
+    $insertButton.Add_Click({
+        $dialog = [System.Windows.Forms.OpenFileDialog]::new()
+        $dialog.Filter = '文章图片 (*.png;*.jpg;*.jpeg)|*.png;*.jpg;*.jpeg'
+        $dialog.Title = '选择要插入的图片'
+        if ($dialog.ShowDialog($editorForm) -ne 'OK') { return }
+        $defaultAlt = [System.IO.Path]::GetFileNameWithoutExtension($dialog.FileName)
+        $alt = [Microsoft.VisualBasic.Interaction]::InputBox(
+            '请用一句短话说明图片内容，例如“Vercel 部署成功结果”。',
+            '图片说明',
+            $defaultAlt
+        ).Trim()
+        if (-not $alt) {
+            [void][System.Windows.Forms.MessageBox]::Show('图片说明不能为空，本次没有插入图片。', '文章编辑器', 'OK', 'Information')
+            return
+        }
+        $alt = $alt.Replace("`r", ' ').Replace("`n", ' ').Replace(']', '】')
+        try {
+            $image = Add-CompressedArticleImage $dialog.FileName $script:CurrentSlug
+            $markdown = "![$alt]($($image.MarkdownUrl))"
+            $prefix = if ($editor.SelectionStart -gt 0 -and $editor.Text[$editor.SelectionStart - 1] -notin @("`r", "`n")) { "`r`n`r`n" } else { '' }
+            $suffix = if ($editor.SelectionStart -lt $editor.TextLength -and $editor.Text[$editor.SelectionStart] -notin @("`r", "`n")) { "`r`n`r`n" } else { '' }
+            $editor.SelectedText = "$prefix$markdown$suffix"
+            $editor.SelectionStart = $editor.SelectionStart
+            Write-Utf8Text $script:CurrentFile $editor.Text
+            $editor.Tag = $editor.Text
+            $editorStatus.Text = "图片已插入并保存：$([System.IO.Path]::GetFileName($image.FilePath))"
+            Write-AppLog "已插入图片：$($image.FilePath)"
+        } catch {
+            [void][System.Windows.Forms.MessageBox]::Show($_.Exception.Message, '插入图片失败', 'OK', 'Error')
+        }
+    })
+
+    $closeButton.Add_Click({ $editorForm.Close() })
+    $editorForm.Add_FormClosing({
+        param($sender, $eventArgs)
+        if ($editor.Text -ne [string]$editor.Tag) {
+            $choice = [System.Windows.Forms.MessageBox]::Show('正文还有未保存修改，是否保存后关闭？', '文章编辑器', 'YesNoCancel', 'Question')
+            if ($choice -eq 'Cancel') { $eventArgs.Cancel = $true; return }
+            if ($choice -eq 'Yes') { Write-Utf8Text $script:CurrentFile $editor.Text }
+        }
+    })
+    [void]$editorForm.ShowDialog($form)
 }
 
 if ($TestSource) {
@@ -283,7 +508,7 @@ $form.Controls.Add($publishButton)
 $openDraftButton = [System.Windows.Forms.Button]::new()
 $openDraftButton.Location = [System.Drawing.Point]::new(20, 333)
 $openDraftButton.Size = [System.Drawing.Size]::new(175, 32)
-$openDraftButton.Text = '打开当前 Markdown'
+$openDraftButton.Text = '编辑正文并插图'
 $openDraftButton.Enabled = $false
 $form.Controls.Add($openDraftButton)
 
@@ -345,6 +570,7 @@ function Set-CurrentArticle {
     $previewButton.Enabled = $true
     $publishButton.Enabled = $true
     $openDraftButton.Enabled = $true
+    $openDraftButton.Text = '编辑正文并插图'
 }
 
 function Get-SelectedArticleType {
@@ -487,47 +713,55 @@ $checkButton.Add_Click({
     } catch {
         Set-AppBusy $false '检查未通过'
         $choice = [System.Windows.Forms.MessageBox]::Show(
-            "$($_.Exception.Message)`r`n`r`n是否立即打开当前 Markdown 修改？",
+            "$($_.Exception.Message)`r`n`r`n是否立即打开文章编辑器修改？",
             '检查发现需要处理的内容',
             'YesNo',
             'Warning'
         )
-        if ($choice -eq 'Yes' -and $script:CurrentFile) { Start-Process -FilePath $script:CurrentFile }
+        if ($choice -eq 'Yes' -and $script:CurrentFile) { Show-ArticleEditor }
     }
 })
 
 $previewButton.Add_Click({
     Stop-ArticlePreview
-    $port = Get-FreeTcpPort
-    $arguments = @($TsxCli, $ArticlePreview, $script:CurrentSlug, '--', '-p', "$port")
-    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
-    $startInfo.FileName = $NodeCommand
-    $startInfo.Arguments = ($arguments | ForEach-Object { ConvertTo-CommandLineArgument $_ }) -join ' '
-    $startInfo.WorkingDirectory = $ProjectRoot
-    $startInfo.UseShellExecute = $false
-    $startInfo.CreateNoWindow = $true
-    $script:PreviewProcess = [System.Diagnostics.Process]::Start($startInfo)
-    Set-AppBusy $true '正在启动草稿预览…'
-    $ready = $false
-    for ($attempt = 0; $attempt -lt 100; $attempt += 1) {
-        [System.Windows.Forms.Application]::DoEvents()
-        Start-Sleep -Milliseconds 150
-        if (Test-TcpPort $port) { $ready = $true; break }
-        if ($script:PreviewProcess.HasExited) { break }
-    }
-    Set-AppBusy $false $(if ($ready) { '草稿预览已打开' } else { '草稿预览启动失败' })
-    if ($ready) {
-        $url = "http://127.0.0.1:$port/articles/$($script:CurrentSlug)"
-        Write-AppLog "草稿预览：$url"
-        Start-Process $url
-    } else {
-        [void][System.Windows.Forms.MessageBox]::Show('预览服务没有成功启动，请查看文章检查结果。', '预览失败', 'OK', 'Error')
+    try {
+        Stage-DraftAssetsForPreview $script:CurrentSlug
+        $port = Get-FreeTcpPort
+        $arguments = @($TsxCli, $ArticlePreview, $script:CurrentSlug, '--', '-p', "$port")
+        $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+        $startInfo.FileName = $NodeCommand
+        $startInfo.Arguments = ($arguments | ForEach-Object { ConvertTo-CommandLineArgument $_ }) -join ' '
+        $startInfo.WorkingDirectory = $ProjectRoot
+        $startInfo.UseShellExecute = $false
+        $startInfo.CreateNoWindow = $true
+        $script:PreviewProcess = [System.Diagnostics.Process]::Start($startInfo)
+        Set-AppBusy $true '正在启动草稿预览…'
+        $ready = $false
+        for ($attempt = 0; $attempt -lt 100; $attempt += 1) {
+            [System.Windows.Forms.Application]::DoEvents()
+            Start-Sleep -Milliseconds 150
+            if (Test-TcpPort $port) { $ready = $true; break }
+            if ($script:PreviewProcess.HasExited) { break }
+        }
+        Set-AppBusy $false $(if ($ready) { '草稿预览已打开' } else { '草稿预览启动失败' })
+        if ($ready) {
+            $url = "http://127.0.0.1:$port/articles/$($script:CurrentSlug)"
+            Write-AppLog "草稿预览：$url"
+            Start-Process $url
+        } else {
+            Stop-ArticlePreview
+            [void][System.Windows.Forms.MessageBox]::Show('预览服务没有成功启动，请查看文章检查结果。', '预览失败', 'OK', 'Error')
+        }
+    } catch {
+        Stop-ArticlePreview
+        Set-AppBusy $false '草稿预览启动失败'
+        [void][System.Windows.Forms.MessageBox]::Show($_.Exception.Message, '预览失败', 'OK', 'Error')
     }
 })
 
 $publishButton.Add_Click({
     $confirmation = [System.Windows.Forms.MessageBox]::Show(
-        "正式上线后，互联网上的访客将能看到这篇文章。`r`n`r`n工具将执行最终检查、只提交当前文章、推送 GitHub，并等待 Vercel 完成生产部署。`r`n`r`n确认现在公开吗？",
+        "正式上线后，互联网上的访客将能看到这篇文章和它的图片。`r`n`r`n工具将执行最终检查、只提交当前文章及其图片、推送 GitHub，并等待 Vercel 完成生产部署。`r`n`r`n确认现在公开吗？",
         '确认正式上线',
         'YesNo',
         'Question'
@@ -544,6 +778,7 @@ $publishButton.Add_Click({
         }
         $script:CurrentFile = $result.Data.articlePath
         $openDraftButton.Enabled = $true
+        $openDraftButton.Text = '打开已发布 Markdown'
         $checkButton.Enabled = $false
         $previewButton.Enabled = $false
         $publishButton.Enabled = $false
@@ -568,9 +803,7 @@ $publishButton.Add_Click({
 })
 
 $openDraftButton.Add_Click({
-    if ($script:CurrentFile -and (Test-Path -LiteralPath $script:CurrentFile)) {
-        Start-Process -FilePath $script:CurrentFile
-    }
+    Show-ArticleEditor
 })
 
 $openFolderButton.Add_Click({ Start-Process explorer.exe $ArticlesDirectory })
